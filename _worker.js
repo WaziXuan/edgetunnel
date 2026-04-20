@@ -355,7 +355,7 @@ export default {
 							const ECHLINK参数 = config_JSON.ECH ? `&ech=${encodeURIComponent((config_JSON.ECHConfig.SNI ? config_JSON.ECHConfig.SNI + '+' : '') + config_JSON.ECHConfig.DNS)}` : '';
 							const isLoonOrSurge = ua.includes('loon') || ua.includes('surge');
 							const { type: 传输协议, 路径字段名, 域名字段名 } = 获取传输协议配置(config_JSON);
-							订阅内容 = 其他节点LINK + 完整优选IP.map(原始地址 => {
+							订阅内容 = 其他节点LINK + (await Promise.all(完整优选IP.map(async (原始地址) => {
 								// 统一正则: 匹配 域名/IPv4/IPv6地址 + 可选端口 + 可选备注
 								// 示例: 
 								//   - 域名: hj.xmm1993.top:2096#备注 或 example.com
@@ -370,6 +370,8 @@ export default {
 									节点地址 = match[1];  // IP地址或域名(可能带方括号)
 									节点端口 = match[2] ? match[2] : (协议类型 === 'ss' && !config_JSON.SS.TLS) ? '80' : '443';  // 端口,TLS默认443 noTLS默认80
 									节点备注 = match[3] || 节点地址;  // 备注,默认为地址本身
+										const 地理位置 = await 查询IP地理位置(节点地址);
+										if (地理位置) 节点备注 = `${节点备注}|${地理位置}`;
 								} else {
 									// 不规范的格式，跳过处理返回null
 									console.warn(`[订阅内容] 不规范的IP格式已忽略: ${原始地址}`);
@@ -391,7 +393,7 @@ export default {
 									const 传输路径参数值 = 获取传输路径参数值(config_JSON, 完整节点路径, 作为优选订阅生成器);
 									return `${协议类型}://00000000-0000-4000-8000-000000000000@${节点地址}:${节点端口}?security=tls&type=${传输协议 + ECHLINK参数}&${域名字段名}=example.com&fp=${config_JSON.Fingerprint}&sni=example.com&${路径字段名}=${encodeURIComponent(传输路径参数值) + TLS分片参数}&encryption=none${config_JSON.跳过证书验证 ? '&insecure=1&allowInsecure=1' : ''}#${encodeURIComponent(节点备注)}`;
 								}
-							}).filter(item => item !== null).join('\n');
+						}))).filter(item => item !== null).join('\n');
 						} else { // 订阅转换
 							const 订阅转换URL = `${config_JSON.订阅转换配置.SUBAPI}/sub?target=${订阅类型}&url=${encodeURIComponent(url.protocol + '//' + url.host + '/sub?target=mixed&token=' + 订阅TOKEN + (url.searchParams.has('sub') && url.searchParams.get('sub') != '' ? `&sub=${url.searchParams.get('sub')}` : ''))}&config=${encodeURIComponent(config_JSON.订阅转换配置.SUBCONFIG)}&emoji=${config_JSON.订阅转换配置.SUBEMOJI}&scv=${config_JSON.跳过证书验证}`;
 							try {
@@ -3829,6 +3831,23 @@ async function 生成随机IP(request, count = 16, 指定端口 = -1, TLS = true
 		return `${ip}:${目标端口}#${cfname}${index + 1}`;
 	});
 	return [randomIPs, randomIPs.join('\n')];
+}
+
+async function 查询IP地理位置(ip) {
+	const cleanIP = ip.replace(/^\[|\]$/g, '');
+	if (/^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|127\.)/.test(cleanIP)) return '';
+	try {
+		const res = await fetch(`https://ipinfo.io/${cleanIP}/json`, {
+			cf: { cacheTtl: 86400, cacheEverything: true }
+		});
+		if (!res.ok) return '';
+		const { country, city } = await res.json();
+		if (!country) return '';
+		const flag = country.toUpperCase().split('').map(c => String.fromCodePoint(0x1F1E6 + c.charCodeAt(0) - 65)).join('');
+		return city ? `${flag}${city}` : `${flag}${country}`;
+	} catch {
+		return '';
+	}
 }
 
 async function 整理成数组(内容) {
