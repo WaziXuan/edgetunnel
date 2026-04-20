@@ -3837,14 +3837,29 @@ async function 查询IP地理位置(ip) {
 	const cleanIP = ip.replace(/^\[|\]$/g, '');
 	if (/^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|127\.)/.test(cleanIP)) return '';
 	try {
+		// Use Cloudflare's own trace endpoint for accurate PoP colo code
+		const traceRes = await fetch(`http://${cleanIP}/cdn-cgi/trace`, {
+			headers: { 'Host': 'cloudflare.com' },
+			cf: { cacheTtl: 3600, cacheEverything: true }
+		});
+		if (traceRes.ok) {
+			const text = await traceRes.text();
+			const colo = text.match(/colo=(\w+)/)?.[1];
+			const loc = text.match(/\nloc=(\w+)/)?.[1];
+			if (colo && loc) {
+				const flag = loc.toUpperCase().split('').map(c => String.fromCodePoint(0x1F1E6 + c.charCodeAt(0) - 65)).join('');
+				return `${flag}${colo}`;
+			}
+		}
+	} catch {}
+	// Fallback: ipinfo.io for non-CF IPs
+	try {
 		const res = await fetch(`https://ipinfo.io/${cleanIP}/json`, {
 			cf: { cacheTtl: 86400, cacheEverything: true }
 		});
 		if (!res.ok) return '';
-		const { country, city, org } = await res.json();
+		const { country, city } = await res.json();
 		if (!country) return '';
-		// Cloudflare anycast IPs all register as San Francisco — skip geo label
-		if (org && org.toLowerCase().includes('cloudflare')) return '';
 		const flag = country.toUpperCase().split('').map(c => String.fromCodePoint(0x1F1E6 + c.charCodeAt(0) - 65)).join('');
 		return city ? `${flag}${city}` : `${flag}${country}`;
 	} catch {
