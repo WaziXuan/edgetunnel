@@ -3841,8 +3841,10 @@ async function 查询IP地理位置(ip) {
 			cf: { cacheTtl: 86400, cacheEverything: true }
 		});
 		if (!res.ok) return '';
-		const { country, city } = await res.json();
+		const { country, city, org } = await res.json();
 		if (!country) return '';
+		// Cloudflare anycast IPs all register as San Francisco — skip geo label
+		if (org && org.toLowerCase().includes('cloudflare')) return '';
 		const flag = country.toUpperCase().split('').map(c => String.fromCodePoint(0x1F1E6 + c.charCodeAt(0) - 65)).join('');
 		return city ? `${flag}${city}` : `${flag}${country}`;
 	} catch {
